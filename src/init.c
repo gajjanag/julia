@@ -386,6 +386,11 @@ static LONG WINAPI _exception_handler(struct _EXCEPTION_POINTERS *ExceptionInfo,
             case EXCEPTION_STACK_OVERFLOW:
                 jl_throw_in_ctx(jl_stackovf_exception, ExceptionInfo->ContextRecord,in_ctx&&pSetThreadStackGuarantee);
                 return EXCEPTION_CONTINUE_EXECUTION;
+            case EXCEPTION_ACCESS_VIOLATION:
+                if (ExceptionInfo->ExceptionRecord->ExceptionInformation[0] == 1) { // writing to read-only memory (e.g. mmap)
+                    jl_throw_in_ctx(jl_memory_exception, ExceptionInfo->ContextRecord,in_ctx);
+                    return EXCEPTION_CONTINUE_EXECUTION;
+                }
         }
         jl_safe_printf("\nPlease submit a bug report with steps to reproduce this fault, and any error messages that follow (in their entirety). Thanks.\nException: ");
         switch (ExceptionInfo->ExceptionRecord->ExceptionCode) {
