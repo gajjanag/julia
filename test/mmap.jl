@@ -155,11 +155,8 @@ m = Mmap.Array(file,2,6)
 @test m[1] == "W".data[1]
 @test m[2] == "o".data[1]
 @test_throws BoundsError m[3]
-finalize(m)
-gc()
-rm(file)
+finalize(m); gc()
 
-file = tempname()
 s = open(file, "w")
 write(s, [0xffffffffffffffff,
           0xffffffffffffffff,
@@ -184,6 +181,7 @@ b = Mmap.BitArray((17,19), s)
 @test b == b0
 close(s)
 finalize(b); finalize(b0)
+b = nothing; b0 = nothing
 gc()
 rm(file)
 
@@ -206,7 +204,8 @@ A3 = Mmap.Array(Int, (m,n), s, convert(FileOffset,2*sizeof(Int)))
 A4 = Mmap.Array(Int, (m,150), s, convert(FileOffset,(2+150*m)*sizeof(Int)))
 @test A[:, 151:end] == A4
 close(s)
-A2=nothing; A3=nothing; A4=nothing; gc()
+finalize(A2); finalize(A3); finalize(A4)
+gc()
 rm(fname)
 
 # AnonymousMmap
