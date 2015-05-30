@@ -588,7 +588,7 @@ stack with:
    topmost backend that does not throw a ``MethodError``).
 
 .. function:: popdisplay()
-   	      popdisplay(d::Display)
+            popdisplay(d::Display)
 
    Pop the topmost backend off of the display-backend stack, or the
    topmost copy of ``d`` in the second variant.
@@ -606,25 +606,35 @@ stack with:
 
 Memory-mapped I/O
 -----------------
+.. function:: Mmap.AnonymousMmap(name, readonly, create)
 
-.. function:: mmap_array(type, dims, stream, [offset])
+   Create an ``IO`` like instance for creating zeroed-out mmapped-memory that is not tied to a file for use in ``Mmap.Array``. Used by ``SharedArray`` for creating shared memory arrays.
 
-   Create an ``Array`` whose values are linked to a file, using memory-mapping. This provides a convenient way of working with data too large to fit in the computer's memory.
+.. function:: Mmap.Array(type, dims, file::Union(AbstractString,IOStream,Mmap.AnonymousMmap), [offset]; grow::Bool=true, shared::Bool=true)
+              Mmap.Array(file::Union(AbstractString,IOStream,Mmap.AnonymousMmap), [dims]; grow::Bool=true, shared::Bool=true)
+              Mmap.Array(type, dims; shared::Bool=true)
+
+   Create an ``Array`` whose values are linked to a file, using memory-mapping. This provides a convenient way of working with data too large to fit in-memory.
 
    The type determines how the bytes of the array are interpreted. Note that the file must be stored in binary format, and no format conversions are possible (this is a limitation of operating systems, not Julia).
 
-   ``dims`` is a tuple specifying the size of the array.
+   ``dims`` is a tuple or single ``Integer`` specifying the size or length of the array.
 
-   The file is passed via the stream argument.  When you initialize the stream, use ``"r"`` for a "read-only" array, and ``"w+"`` to create a new array used to write values to disk.
+   The file is passed via the ``file`` argument as an open ``IOStream``, or the name of the file as a string. An ``Mmap.AnonymousMmap`` can also be passed which creates a zeroed-out memory-mapped region not backed by a file.
 
    Optionally, you can specify an offset (in bytes) if, for example, you want to skip over a header in the file. The default value for the offset is the current stream position.
+
+   If no ``type`` argument is specified, the default is ``UInt8``.
+
+   The ``grow`` keyword argument specifies whether the file should be grown to accomodate the requested size of array (if the total file size is < requested array size). Write privileges are required to grow the file.
+
+   The ``shared`` keyword argument specifies whether the resulting ``Array`` and changes made to it will be visible to other processes mapping the same file; only applicable on unix systems.
 
    For example, the following code::
 
       # Create a file for mmapping
-      # (you could alternatively use mmap_array to do this step, too)
       A = rand(1:20, 5, 30)
-      s = open("/tmp/mmap.bin", "w+")
+      s = open("mmap.bin", "w+")
       # We'll write the dimensions of the array as the first two Ints in the file
       write(s, size(A,1))
       write(s, size(A,2))
@@ -633,26 +643,18 @@ Memory-mapped I/O
       close(s)
 
       # Test by reading it back in
-      s = open("/tmp/mmap.bin")   # default is read-only
+      s = open("mmap.bin")   # default is read-only
       m = read(s, Int)
       n = read(s, Int)
-      A2 = mmap_array(Int, (m,n), s)
+      A2 = Mmap.Array(Int, (m,n), s)
 
    creates a ``m``-by-``n`` ``Matrix{Int}``, linked to the file associated with stream ``s``.
 
    A more portable file would need to encode the word size---32 bit or 64 bit---and endianness information in the header. In practice, consider encoding binary data using standard formats like HDF5 (which can be used with memory-mapping).
 
-.. function:: mmap_bitarray([type,] dims, stream, [offset])
+.. function:: Mmap.sync!(array)
 
-   Create a ``BitArray`` whose values are linked to a file, using memory-mapping; it has the same purpose, works in the same way, and has the same arguments, as :func:`mmap_array`, but the byte representation is different. The ``type`` parameter is optional, and must be ``Bool`` if given.
-
-   **Example**:  ``B = mmap_bitarray((25,30000), s)``
-
-   This would create a 25-by-30000 ``BitArray``, linked to the file associated with stream ``s``.
-
-.. function:: msync(array)
-
-   Forces synchronization between the in-memory version of a memory-mapped ``Array`` or ``BitArray`` and the on-disk version.
+   Forces synchronization between the in-memory version of a memory-mapped ``Array`` and the on-disk version.
 
 Network I/O
 -----------
