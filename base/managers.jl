@@ -218,7 +218,7 @@ end
 
 function acquire(s::Sem)
     while true
-        if s.n_acq < n.cnt
+        if s.n_acq < s.cnt
             s.n_acq = s.n_acq + 1
             return
         else
@@ -232,7 +232,7 @@ function release(s::Sem)
     notify(s.c; all=false)
 end
 
-tunnel_hosts_map = Dict{AbstractString, Sem}()
+const tunnel_hosts_map = Dict{AbstractString, Sem}()
 
 function connect(manager::ClusterManager, pid::Int, config::WorkerConfig)
     if !isnull(config.connect_at)

@@ -1,47 +1,5 @@
 # This file is a part of Julia. License is MIT: http://julialang.org/license
 
-## multi.jl - multiprocessing
-##
-## julia starts with one process, and processors can be added using:
-##   addprocs(n)                         using exec
-##   addprocs({"host1","host2",...})     using remote execution
-##
-## remotecall(w, func, args...) -
-##     tell a worker to call a function on the given arguments.
-##     returns a RemoteRef to the result.
-##
-## remote_do(w, f, args...) - remote function call with no result
-##
-## wait(rr) - wait for a RemoteRef to be finished computing
-##
-## fetch(rr) - wait for and get the value of a RemoteRef
-##
-## remotecall_fetch(w, func, args...) - faster fetch(remotecall(...))
-##
-## pmap(func, lst) -
-##     call a function on each element of lst (some 1-d thing), in
-##     parallel.
-##
-## RemoteRef() - create an uninitialized RemoteRef on the local processor
-##
-## RemoteRef(p) - ...or on a particular processor
-##
-## put!(r, val) - store a value to an uninitialized RemoteRef
-##
-## @spawn expr -
-##     evaluate expr somewhere. returns a RemoteRef. all variables in expr
-##     are copied to the remote processor.
-##
-## @spawnat p expr - @spawn specifying where to run
-##
-## @async expr -
-##     run expr as an asynchronous task on the local processor
-##
-## @parallel (r) for i=1:n ... end -
-##     parallel loop. the results from each iteration are reduced using (r).
-##
-## @everywhere expr - run expr everywhere.
-
 # todo:
 # * fetch/wait latency seems to be excessive
 # * message aggregation
@@ -121,13 +79,14 @@ type WorkerConfig
     end
 end
 
-@enum WorkerState W_RUNNING W_TERMINATING W_TERMINATED
+@enum WorkerState W_CREATED W_RUNNING W_TERMINATING W_TERMINATED
 type Worker
     id::Int
     del_msgs::Array{Any,1}
     add_msgs::Array{Any,1}
     gcflag::Bool
     state::WorkerState
+    c_state::Condition      # wait for state changes
 
     r_stream::AsyncStream
     w_stream::AsyncStream
@@ -140,6 +99,8 @@ type Worker
         w.w_stream = buffer_writes(w_stream)
         w.manager = manager
         w.config = config
+        set_worker_state(w, W_RUNNING)
+        register_worker_streams(w)
         w
     end
 
@@ -147,12 +108,20 @@ type Worker
         if haskey(map_pid_wrkr, id)
             return map_pid_wrkr[id]
         end
-        new(id, [], [], false, W_RUNNING)
+        w=new(id, [], [], false, W_CREATED, Condition())
+        register_worker(w)
+        w
     end
+    
+    Worker() = Worker(get_next_pid())
 end
 
 Worker(id, r_stream, w_stream, manager) = Worker(id, r_stream, w_stream, manager, WorkerConfig())
 
+function set_worker_state(w, state)
+    w.state = state
+    notify(w.c_state)
+end
 
 function send_msg_now(w::Worker, kind, args...)
     send_msg_(w, kind, args, true)
@@ -304,7 +273,7 @@ function rmprocs(args...; waitfor = 0.0)
         else
             if haskey(map_pid_wrkr, i)
                 w = map_pid_wrkr[i]
-                w.state = W_TERMINATING
+                set_worker_state(w, W_TERMINATING)
                 kill(w.manager, i, w.config)
                 push!(rmprocset, w)
             end
@@ -362,10 +331,11 @@ register_worker(w) = register_worker(PGRP, w)
 function register_worker(pg, w)
     push!(pg.workers, w)
     map_pid_wrkr[w.id] = w
-    if isa(w, Worker)
-        map_sock_wrkr[w.r_stream] = w
-        map_sock_wrkr[w.w_stream] = w
-    end
+end
+
+function register_worker_streams(w)
+    map_sock_wrkr[w.r_stream] = w
+    map_sock_wrkr[w.w_stream] = w
 end
 
 deregister_worker(pid) = deregister_worker(PGRP, pid)
@@ -884,26 +854,24 @@ function create_message_handler_loop(r_stream::AsyncStream, w_stream::AsyncStrea
                     put!(lookup_ref(oid), val)
                 elseif is(msg, :identify_socket)
                     otherid = deserialize(r_stream)
-                    register_worker(Worker(otherid, r_stream, w_stream, cluster_manager))
+                    Worker(otherid, r_stream, w_stream, cluster_manager) # The constructor registers the worker
+                    
                 elseif is(msg, :join_pgrp)
                     self_pid = LPROC.id = deserialize(r_stream)
                     locs = deserialize(r_stream)
                     self_is_local = deserialize(r_stream)
                     controller = Worker(1, r_stream, w_stream, cluster_manager)
-                    register_worker(controller)
                     register_worker(LPROC)
 
                     # Connect to pids lower than us.
                     @sync begin
                         for (connect_at, rpid, r_is_local) in locs
-                            if (rpid < self_pid) && (!(rpid == 1))
-                                wconfig = WorkerConfig()
-                                wconfig.connect_at = connect_at
-                                wconfig.environ = AnyDict(:self_is_local=>self_is_local, :r_is_local=>r_is_local)
-                                
-                                let rpid=rpid, wconfig=wconfig
-                                    @async connect_to_peer(cluster_manager, rpid, wconfig)
-                                end
+                            wconfig = WorkerConfig()
+                            wconfig.connect_at = connect_at
+                            wconfig.environ = AnyDict(:self_is_local=>self_is_local, :r_is_local=>r_is_local)
+                            
+                            let rpid=rpid, wconfig=wconfig
+                                @async connect_to_peer(cluster_manager, rpid, wconfig)
                             end
                         end
                     end
@@ -928,7 +896,8 @@ function create_message_handler_loop(r_stream::AsyncStream, w_stream::AsyncStrea
             iderr = worker_id_from_socket(r_stream)
             werr = worker_from_id(iderr)
             oldstate = werr.state
-            werr.state = W_TERMINATED
+            set_worker_state(werr, W_TERMINATED)
+            
 
             # If error occured talking to pid 1, commit harakiri
             if iderr == 1
@@ -963,7 +932,6 @@ function connect_to_peer(manager, rpid, wconfig)
     try
         (r_s, w_s) = connect(manager, rpid, wconfig)
         w = Worker(rpid, r_s, w_s, manager, wconfig)
-        register_worker(w)
         process_messages(w.r_stream, w.w_stream)
         send_msg_now(w, :identify_socket, myid())
         
@@ -1195,11 +1163,10 @@ function create_worker(manager, wconfig)
     assert(LPROC.id == 1)
 
     # initiate a connect. Does not wait for connection completion in case of TCP.
-    pid = get_next_pid()
-    (r_s, w_s) = connect(manager, pid, wconfig)
-
-    w = Worker(pid, r_s, w_s, manager, wconfig)
-    register_worker(w)
+    w = Worker()
+    
+    (r_s, w_s) = connect(manager, w.id, wconfig)
+    w = Worker(w.id, r_s, w_s, manager, wconfig)
     # install a finalizer to perform cleanup if necessary
     finalizer(w, (w)->if myid() == 1 manage(w.manager, w.id, w.config, :finalize) end)
     
@@ -1222,17 +1189,26 @@ function create_worker(manager, wconfig)
     #   - each worker then sends a :join_complete back to the master along with its OS_PID and NUM_CORES
     # - once master receives a :join_complete it triggers rr_join (signifies that worker setup is complete)
     
-    # need to wait for lower worker pids to have completed registering, since the numerical value
-    # of pids is releavnt to the connection process, i.e., higher pids connect to lower pids
+    # need to wait for lower worker pids to have completed connecting, since the numerical value
+    # of pids is relevant to the connection process, i.e., higher pids connect to lower pids and they
+    # require the value of config.connect_at
     
+    lower_wlist = filter(x -> (x.id != 1) && (x.id < w.id) && (x.state == W_CREATED), PGRP.workers)
+    for wl in lower_wlist
+        if wl.state == W_CREATED 
+            wait(wl.c_state)
+        end
+    end
+
+    # filter list to workers in a running state
+    lower_list = filter(x -> (x.id != 1) && (x.id < w.id) && (x.state==W_RUNNING), PGRP.workers)
     
-    
-    all_locs = map(x -> isa(x, Worker) ? (get(x.config.connect_at, ()), x.id, isa(x.manager, LocalManager)) : ((), x.id, true), PGRP.workers)
+    all_locs = map(x -> isa(x, Worker) ? (get(x.config.connect_at, ()), x.id, isa(x.manager, LocalManager)) : ((), x.id, true), lower_list)
     send_msg_now(w, :join_pgrp, w.id, all_locs, isa(w.manager, LocalManager))
 
     @schedule manage(w.manager, w.id, w.config, :register)
     wait(rr_join)
-    pid
+    w.id
 end
 
 

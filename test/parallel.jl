@@ -290,7 +290,7 @@ if Bool(parse(Int,(get(ENV, "JULIA_TESTFULL", "0"))))
     test_n_remove_pids(new_pids)
 
     print("\nssh addprocs with tunnel\n")
-    new_pids = sort(remotecall_fetch(1, (h, sf) -> addprocs(h; tunnel=true, sshflags=sf), [("localhost", 9)], sshflags))
+    new_pids = sort(remotecall_fetch(1, (h, sf) -> addprocs(h; tunnel=true, sshflags=sf), [("localhost", 90)], sshflags))
     @test length(new_pids) == 9
     test_n_remove_pids(new_pids)
 
