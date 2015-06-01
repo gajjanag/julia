@@ -652,6 +652,16 @@ Memory-mapped I/O
 
    A more portable file would need to encode the word size---32 bit or 64 bit---and endianness information in the header. In practice, consider encoding binary data using standard formats like HDF5 (which can be used with memory-mapping).
 
+.. function:: Mmap.BitArray(dims, stream::Union(AbstractString,IOStream,Mmap.AnonymousMmap), [offset]; grow::Bool=true, shared::Bool=true)
+              Mmap.BitArray(stream::Union(AbstractString,IOStream,Mmap.AnonymousMmap), dims, [offset]; grow::Bool=true, shared::Bool=true)
+              Mmap.BitArray(dims; shared::Bool=true)
+
+   Create a ``BitArray`` whose values are linked to a file, using memory-mapping; it has the same purpose, works in the same way, and has the same arguments, as :func:`Mmap.Array`, but the byte representation is different.
+
+   **Example**:  ``B = Mmap.BitArray((25,30000), s)``
+
+   This would create a 25-by-30000 ``BitArray``, linked to the file associated with stream ``s``.
+
 .. function:: Mmap.sync!(array)
 
    Forces synchronization between the in-memory version of a memory-mapped ``Array`` and the on-disk version.

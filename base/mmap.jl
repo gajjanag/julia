@@ -187,7 +187,6 @@ end
 Mmap.BitArray{N}(dims::NTuple{N,Integer}, file::AbstractString, offset::Integer=Int64(0); grow::Bool=true, shared::Bool=true) =
     open(io->Mmap.BitArray(dims, io, offset; grow=grow, shared=shared), file, isfile(file) ? "r+" : "w+")
 
-# using default type: UInt8
 Mmap.BitArray{N}(io::IO, dims::NTuple{N,Integer}, offset::Integer=position(io); grow::Bool=true, shared::Bool=true) =
     Mmap.BitArray(dims, io, offset; grow=grow, shared=shared)
 Mmap.BitArray{N}(file::AbstractString, dims::NTuple{N,Integer}, offset::Integer=Int64(0); grow::Bool=true, shared::Bool=true) =
