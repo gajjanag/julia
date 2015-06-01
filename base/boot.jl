@@ -218,7 +218,10 @@ immutable DomainError        <: Exception end
 immutable OverflowError      <: Exception end
 immutable InexactError       <: Exception end
 immutable OutOfMemoryError   <: Exception end
+<<<<<<< HEAD
 immutable ReadOnlyMemoryError<: Exception end
+=======
+>>>>>>> 317a4d1141fa5302f98f0079b98e679d4847c7eb
 immutable SegmentationFault  <: Exception end
 immutable StackOverflowError <: Exception end
 immutable UndefRefError      <: Exception end
