@@ -287,7 +287,7 @@ void segv_handler(int sig, siginfo_t *info, void *context)
         sigemptyset(&sset);
         sigaddset(&sset, SIGSEGV);
         sigprocmask(SIG_UNBLOCK, &sset, NULL);
-        jl_throw(jl_memory_exception);
+        jl_throw(jl_readonlymemory_exception);
     }
     else {
         sigdie_handler(sig, info, context);
@@ -388,7 +388,7 @@ static LONG WINAPI _exception_handler(struct _EXCEPTION_POINTERS *ExceptionInfo,
                 return EXCEPTION_CONTINUE_EXECUTION;
             case EXCEPTION_ACCESS_VIOLATION:
                 if (ExceptionInfo->ExceptionRecord->ExceptionInformation[0] == 1) { // writing to read-only memory (e.g. mmap)
-                    jl_throw_in_ctx(jl_memory_exception, ExceptionInfo->ContextRecord,in_ctx);
+                    jl_throw_in_ctx(jl_readonlymemory_exception, ExceptionInfo->ContextRecord,in_ctx);
                     return EXCEPTION_CONTINUE_EXECUTION;
                 }
         }
@@ -761,7 +761,7 @@ void darwin_stack_overflow_handler(unw_context_t *uc)
 void darwin_accerr_handler(unw_context_t *uc)
 {
     bt_size = rec_backtrace_ctx(bt_data, MAX_BT_SIZE, uc);
-    jl_exception_in_transit = jl_memory_exception;
+    jl_exception_in_transit = jl_readonlymemory_exception;
     jl_rethrow();
 }
 
@@ -1329,6 +1329,7 @@ void jl_get_builtin_hooks(void)
     jl_interrupt_exception = jl_new_struct_uninit((jl_datatype_t*)core("InterruptException"));
     jl_boundserror_type    = (jl_datatype_t*)core("BoundsError");
     jl_memory_exception    = jl_new_struct_uninit((jl_datatype_t*)core("OutOfMemoryError"));
+    jl_readonlymemory_exception = jl_new_struct_uninit((jl_datatype_t*)core("ReadOnlyMemoryError"));
 
     jl_ascii_string_type = (jl_datatype_t*)core("ASCIIString");
     jl_utf8_string_type = (jl_datatype_t*)core("UTF8String");
