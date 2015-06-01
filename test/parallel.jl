@@ -252,6 +252,7 @@ if Bool(parse(Int,(get(ENV, "JULIA_TESTFULL", "0"))))
             catch e
                 print("p       :     $p\n")
                 print("newpids :     $new_pids\n")
+                print("w_in_remote : $w_in_remote\n")
                 print("intersect   : $(intersect(new_pids, w_in_remote))\n\n\n")
                 rethrow(e)
             end

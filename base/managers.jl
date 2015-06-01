@@ -209,6 +209,31 @@ end
 immutable DefaultClusterManager <: ClusterManager
 end
 
+type Sem
+    cnt::Int
+    n_acq::Int
+    c::Condition
+    Sem(cnt) = new(cnt, 0, Condition())
+end
+
+function acquire(s::Sem)
+    while true
+        if s.n_acq < n.cnt
+            s.n_acq = s.n_acq + 1
+            return
+        else
+            wait(s.c)
+        end
+    end
+end
+
+function release(s::Sem)
+    s.n_acq = s.n_acq - 1
+    notify(s.c; all=false)
+end
+
+tunnel_hosts_map = Dict{AbstractString, Sem}()
+
 function connect(manager::ClusterManager, pid::Int, config::WorkerConfig)
     if !isnull(config.connect_at)
         # this is a worker-to-worker setup call.
@@ -243,8 +268,18 @@ function connect(manager::ClusterManager, pid::Int, config::WorkerConfig)
     end
 
     if tunnel
+        if !haskey(tunnel_hosts_map, pubhost)
+            tunnel_hosts_map[pubhost] = Sem(get(config.max_parallel, typemax(Int)))
+        end
+        sem = tunnel_hosts_map[pubhost]
+        
         sshflags = get(config.sshflags)
-        (s, bind_addr) = connect_to_worker(pubhost, bind_addr, port, user, sshflags)
+        acquire(sem)
+        try
+            (s, bind_addr) = connect_to_worker(pubhost, bind_addr, port, user, sshflags)
+        finally
+            release(sem)
+        end
     else
         (s, bind_addr) = connect_to_worker(bind_addr, port)
     end
