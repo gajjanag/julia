@@ -112,7 +112,7 @@ type Worker
         register_worker(w)
         w
     end
-    
+
     Worker() = Worker(get_next_pid())
 end
 
@@ -855,7 +855,7 @@ function create_message_handler_loop(r_stream::AsyncStream, w_stream::AsyncStrea
                 elseif is(msg, :identify_socket)
                     otherid = deserialize(r_stream)
                     Worker(otherid, r_stream, w_stream, cluster_manager) # The constructor registers the worker
-                    
+
                 elseif is(msg, :join_pgrp)
                     self_pid = LPROC.id = deserialize(r_stream)
                     locs = deserialize(r_stream)
@@ -869,13 +869,13 @@ function create_message_handler_loop(r_stream::AsyncStream, w_stream::AsyncStrea
                             wconfig = WorkerConfig()
                             wconfig.connect_at = connect_at
                             wconfig.environ = AnyDict(:self_is_local=>self_is_local, :r_is_local=>r_is_local)
-                            
+
                             let rpid=rpid, wconfig=wconfig
                                 @async connect_to_peer(cluster_manager, rpid, wconfig)
                             end
                         end
                     end
-                    
+
                     send_msg_now(controller, :join_complete, Sys.CPU_CORES, getpid())
 
                 elseif is(msg, :join_complete)
@@ -897,7 +897,7 @@ function create_message_handler_loop(r_stream::AsyncStream, w_stream::AsyncStrea
             werr = worker_from_id(iderr)
             oldstate = werr.state
             set_worker_state(werr, W_TERMINATED)
-            
+
 
             # If error occured talking to pid 1, commit harakiri
             if iderr == 1
@@ -934,7 +934,7 @@ function connect_to_peer(manager, rpid, wconfig)
         w = Worker(rpid, r_s, w_s, manager, wconfig)
         process_messages(w.r_stream, w.w_stream)
         send_msg_now(w, :identify_socket, myid())
-        
+
         # test connectivity with an echo
         assert(:ok == remotecall_fetch(rpid, ()->:ok))
     catch e
@@ -1092,13 +1092,13 @@ function addprocs(manager::ClusterManager; kwargs...)
 
             if (length(launched) > 0)
                 wconfig = shift!(launched)
-                let wconfig=wconfig 
+                let wconfig=wconfig
                     @async setup_launched_worker(manager, wconfig, launched_q)
                 end
             end
         end
     end
-    
+
     wait(t_launch)      # catches any thrown errors from the launch task
 
     sort!(launched_q)
@@ -1114,7 +1114,7 @@ default_addprocs_params() = AnyDict(
 function setup_launched_worker(manager, wconfig, launched_q)
     pid = create_worker(manager, wconfig)
     push!(launched_q, pid)
-    
+
     # When starting workers on remote multi-core hosts, `launch` can (optionally) start only one
     # process on the remote machine, with a request to start additional workers of the
     # same type. This is done by setting an appropriate value to `WorkerConfig.cnt`.
@@ -1123,7 +1123,7 @@ function setup_launched_worker(manager, wconfig, launched_q)
         cnt = get(wconfig.environ)[:cpu_cores]
     end
     cnt = cnt - 1   # Removing self from the requested number
-    
+
     if cnt > 0
         launch_n_process_additional(manager, pid, wconfig, cnt, launched_q)
     end
@@ -1164,12 +1164,12 @@ function create_worker(manager, wconfig)
 
     # initiate a connect. Does not wait for connection completion in case of TCP.
     w = Worker()
-    
+
     (r_s, w_s) = connect(manager, w.id, wconfig)
     w = Worker(w.id, r_s, w_s, manager, wconfig)
     # install a finalizer to perform cleanup if necessary
     finalizer(w, (w)->if myid() == 1 manage(w.manager, w.id, w.config, :finalize) end)
-    
+
     # set when the new worker has finshed connections with all other workers
     rr_join = RemoteRef()
 
@@ -1188,21 +1188,21 @@ function create_worker(manager, wconfig)
     #   - each worker sends a :identify_socket to all workers less than its pid
     #   - each worker then sends a :join_complete back to the master along with its OS_PID and NUM_CORES
     # - once master receives a :join_complete it triggers rr_join (signifies that worker setup is complete)
-    
+
     # need to wait for lower worker pids to have completed connecting, since the numerical value
     # of pids is relevant to the connection process, i.e., higher pids connect to lower pids and they
     # require the value of config.connect_at
-    
+
     lower_wlist = filter(x -> (x.id != 1) && (x.id < w.id) && (x.state == W_CREATED), PGRP.workers)
     for wl in lower_wlist
-        if wl.state == W_CREATED 
+        if wl.state == W_CREATED
             wait(wl.c_state)
         end
     end
 
     # filter list to workers in a running state
     lower_list = filter(x -> (x.id != 1) && (x.id < w.id) && (x.state==W_RUNNING), PGRP.workers)
-    
+
     all_locs = map(x -> isa(x, Worker) ? (get(x.config.connect_at, ()), x.id, isa(x.manager, LocalManager)) : ((), x.id, true), lower_list)
     send_msg_now(w, :join_pgrp, w.id, all_locs, isa(w.manager, LocalManager))
 

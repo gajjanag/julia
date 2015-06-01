@@ -272,7 +272,7 @@ function connect(manager::ClusterManager, pid::Int, config::WorkerConfig)
             tunnel_hosts_map[pubhost] = Sem(get(config.max_parallel, typemax(Int)))
         end
         sem = tunnel_hosts_map[pubhost]
-        
+
         sshflags = get(config.sshflags)
         acquire(sem)
         try
